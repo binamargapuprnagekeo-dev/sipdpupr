@@ -1,0 +1,6 @@
+{
+  "name": "Administrasi Keuangan PUPR Nagekeo",
+  "description": "Aplikasi pengelolaan data anggaran, perhitungan pajak, dan pembuatan dokumen otomatis (Kwitansi, BAP, NPD, SPJ) Dinas PUPR Kabupaten Nagekeo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
