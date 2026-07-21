@@ -179,7 +179,7 @@ export default function App() {
     if (hasTaxes) {
       const linkedRek = rekening.find(r => r.id === newDoc.rekeningId);
       const linkedRekeningCode = linkedRek ? linkedRek.kode : 'Umum';
-      const linkedRekeningPayee = pejabat.find(p => p.id === newDoc.rekananId)?.nama || 'CV. EL EMUNAH';
+      const linkedRekeningPayee = pejabat.find(p => p.id === newDoc.rekananId)?.nama || newDoc.manualRekananNama || '';
 
       const newTaxLog: CatatanPajak = {
         id: `pj-${Date.now()}`,

@@ -30,6 +30,36 @@ interface DocumentGeneratorProps {
   onClearSelectedExternalDokumen: () => void;
 }
 
+const getGoogleDriveImageUrl = (link: string) => {
+  if (!link) return '';
+  const trimmed = link.trim();
+  
+  // Match file/d/FILE_ID
+  const fileIdRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
+  const match1 = trimmed.match(fileIdRegex);
+  if (match1 && match1[1]) {
+    return `https://lh3.googleusercontent.com/d/${match1[1]}`;
+  }
+  
+  // Match id=FILE_ID query param
+  try {
+    const urlObj = new URL(trimmed);
+    const id = urlObj.searchParams.get('id');
+    if (id) {
+      return `https://lh3.googleusercontent.com/d/${id}`;
+    }
+  } catch (e) {
+    // ignore
+  }
+  
+  // Direct file ID format
+  if (/^[a-zA-Z0-9_-]{25,}$/.test(trimmed)) {
+    return `https://lh3.googleusercontent.com/d/${trimmed}`;
+  }
+  
+  return trimmed;
+};
+
 export default function DocumentGenerator({
   dokumen,
   pejabat,
@@ -46,11 +76,18 @@ export default function DocumentGenerator({
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
+  // Google Drive Logo & Stamp Toggle states
+  const [logoLink, setLogoLink] = useState(() => {
+    return localStorage.getItem('pupr_logo_link') || '';
+  });
+  const [showCap, setShowCap] = useState(false);
+  const [showPrintHintModal, setShowPrintHintModal] = useState(false);
+
   // Form input states
   const [nomor, setNomor] = useState('');
   const [tanggal, setTanggal] = useState('2026-07-15');
   const [nilai, setNilai] = useState<number>(99900000);
-  const [uraian, setUraian] = useState('Pembayaran 100% atas Pekerjaan Belanja Jasa Konsultasi Perencanaan Teknis Jalan Kabupaten DAU 2026 Kepada CV.EL EMUNAH pada Dinas PUPR TA.2026 dari Dana DAU');
+  const [uraian, setUraian] = useState('Pembayaran 100% atas Pekerjaan Belanja Jasa Konsultasi Perencanaan Teknis Jalan Kabupaten DAU 2026 pada Dinas PUPR TA.2026 dari Dana DAU');
   
   // Officials bindings
   const [ppkId, setPpkId] = useState('');
@@ -60,13 +97,18 @@ export default function DocumentGenerator({
   const [pptkId, setPptkId] = useState('');
   const [rekeningId, setRekeningId] = useState('');
 
-  // Contracts
-  const [noKontrak, setNoKontrak] = useState('620/DPUPR-NGK/PJ.DAU/02/V/2026');
-  const [tglKontrak, setTglKontrak] = useState('2026-05-04');
-  const [noSPMK, setNoSPMK] = useState('620/DPUPR-NGK/PJ.DAU/03/V/2026');
-  const [tglSPMK, setTglSPMK] = useState('2026-05-05');
-  const [noBAST, setNoBAST] = useState('620/DPUPR-NGK/BAST-PPJ.DAU/05/VI/2026');
-  const [tglBAST, setTglBAST] = useState('2026-06-29');
+  // Manual Rekanan details (if unselected or selected manual)
+  const [manualRekananInstansi, setManualRekananInstansi] = useState('');
+  const [manualRekananNama, setManualRekananNama] = useState('');
+  const [manualRekananJabatan, setManualRekananJabatan] = useState('Kepala Perwakilan');
+  const [manualRekananAlamat, setManualRekananAlamat] = useState('');
+
+  // Dynamic Supporting Documents List
+  const [supportingDocs, setSupportingDocs] = useState<{ id: string; label: string; nomor: string; tanggal: string }[]>(() => [
+    { id: '1', label: 'KONTRAK', nomor: '620/DPUPR-NGK/PJ.DAU/02/V/2026', tanggal: '2026-05-04' },
+    { id: '2', label: 'SPMK', nomor: '620/DPUPR-NGK/PJ.DAU/03/V/2026', tanggal: '2026-05-05' },
+    { id: '3', label: 'BAST PERENCANAAN', nomor: '620/DPUPR-NGK/BAST-PPJ.DAU/05/VI/2026', tanggal: '2026-06-29' }
+  ]);
   
   // Taxes
   const [taxPPN, setTaxPPN] = useState<number>(4950000);
@@ -94,12 +136,26 @@ export default function DocumentGenerator({
     setPptkId(doc.pptkId || '');
     setRekeningId(doc.rekeningId || '');
 
-    setNoKontrak(doc.noKontrak || '');
-    setTglKontrak(doc.tglKontrak || '');
-    setNoSPMK(doc.noSPMK || '');
-    setTglSPMK(doc.tglSPMK || '');
-    setNoBAST(doc.noBAST || '');
-    setTglBAST(doc.tglBAST || '');
+    setManualRekananInstansi(doc.manualRekananInstansi || '');
+    setManualRekananNama(doc.manualRekananNama || '');
+    setManualRekananJabatan(doc.manualRekananJabatan || 'Kepala Perwakilan');
+    setManualRekananAlamat(doc.manualRekananAlamat || '');
+
+    const loadedDocs: { id: string; label: string; nomor: string; tanggal: string }[] = [];
+    if (doc.supportingDocs && doc.supportingDocs.length > 0) {
+      setSupportingDocs(doc.supportingDocs);
+    } else {
+      if (doc.noKontrak || doc.tglKontrak) {
+        loadedDocs.push({ id: '1', label: 'KONTRAK', nomor: doc.noKontrak || '', tanggal: doc.tglKontrak || '' });
+      }
+      if (doc.noSPMK || doc.tglSPMK) {
+        loadedDocs.push({ id: '2', label: 'SPMK', nomor: doc.noSPMK || '', tanggal: doc.tglSPMK || '' });
+      }
+      if (doc.noBAST || doc.tglBAST) {
+        loadedDocs.push({ id: '3', label: 'BAST PERENCANAAN', nomor: doc.noBAST || '', tanggal: doc.tglBAST || '' });
+      }
+      setSupportingDocs(loadedDocs);
+    }
 
     setTaxPPN(doc.pajak.ppn);
     setTaxPPh21(doc.pajak.pph21);
@@ -156,21 +212,32 @@ export default function DocumentGenerator({
     setSelectedDocId(null);
     setNomor(`53.16/03.0/000098/LS/1.03.0.00.0.00.01.0000/P2/7/2026`);
     setTanggal('2026-07-21');
-    setNilai(50000000);
-    setUraian('Pembayaran Pekerjaan Jasa Konsultansi ... Kabupaten Nagekeo Tahun Anggaran 2026');
+    setNilai(0);
+    setUraian('');
     
-    // Clear contracts to fill
-    setNoKontrak('.../DPUPR-NGK/PJ.DAU/02/V/2026');
-    setNoSPMK('.../DPUPR-NGK/PJ.DAU/03/V/2026');
-    setNoBAST('.../DPUPR-NGK/BAST-PPJ.DAU/05/VI/2026');
+    // Clear officials to fill manually
+    setPpkId('');
+    setBendaharaId('');
+    setRekananId('');
+    setKadisId('');
+    setPptkId('');
+    setRekeningId('');
+
+    // Clear manual rekanan
+    setManualRekananInstansi('');
+    setManualRekananNama('');
+    setManualRekananJabatan('Kepala Perwakilan');
+    setManualRekananAlamat('');
+
+    // Clear supporting docs so they are blank!
+    setSupportingDocs([]);
     
-    // Default taxes
-    const dpp = 50000000 / 1.11;
-    setTaxPPN(Math.round(dpp * 0.11));
+    // Reset taxes to 0
+    setTaxPPN(0);
     setTaxPPh21(0);
     setTaxPPh22(0);
-    setTaxPPh23(Math.round(dpp * 0.02));
-    setTaxDaerah(Math.round(dpp * 0.015));
+    setTaxPPh23(0);
+    setTaxDaerah(0);
   };
 
   const handleSaveDocument = () => {
@@ -189,12 +256,19 @@ export default function DocumentGenerator({
       kadisId,
       pptkId,
       rekeningId,
-      noKontrak,
-      tglKontrak,
-      noSPMK,
-      tglSPMK,
-      noBAST,
-      tglBAST,
+      // Save manual rekanan inputs
+      manualRekananInstansi,
+      manualRekananNama,
+      manualRekananJabatan,
+      manualRekananAlamat,
+      // Fallback for older database formats
+      noKontrak: supportingDocs[0]?.nomor || '',
+      tglKontrak: supportingDocs[0]?.tanggal || '',
+      noSPMK: supportingDocs[1]?.nomor || '',
+      tglSPMK: supportingDocs[1]?.tanggal || '',
+      noBAST: supportingDocs[2]?.nomor || '',
+      tglBAST: supportingDocs[2]?.tanggal || '',
+      supportingDocs, // Dynamic documents list
       nilaiKontrak: nilai,
       pajak: {
         ppn: taxPPN,
@@ -221,7 +295,17 @@ export default function DocumentGenerator({
   // Get active linked objects
   const activePPK = pejabat.find(p => p.id === ppkId);
   const activeBendahara = pejabat.find(p => p.id === bendaharaId);
-  const activeRekanan = pejabat.find(p => p.id === rekananId);
+  const activeRekanan = rekananId === 'manual' || rekananId === '' ? (
+    manualRekananInstansi || manualRekananNama ? {
+      id: 'manual',
+      nama: manualRekananNama,
+      nip: '-',
+      jabatan: manualRekananJabatan,
+      peran: 'Rekanan' as const,
+      instansi: manualRekananInstansi,
+      alamat: manualRekananAlamat
+    } : null
+  ) : pejabat.find(p => p.id === rekananId);
   const activeKadis = pejabat.find(p => p.id === kadisId);
   const activePPTK = pejabat.find(p => p.id === pptkId);
   const activeRekening = rekening.find(r => r.id === rekeningId);
@@ -232,11 +316,19 @@ export default function DocumentGenerator({
   };
 
   const handlePrint = () => {
-    window.print();
+    if (window.self !== window.top) {
+      setShowPrintHintModal(true);
+    }
+    try {
+      window.print();
+    } catch (e) {
+      console.warn("window.print failed", e);
+    }
   };
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
       
       {/* Tab select and Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-sm no-print">
@@ -301,6 +393,19 @@ export default function DocumentGenerator({
         </div>
       </div>
 
+      {/* Sandbox Print Warning/Tip */}
+      {window.self !== window.top && (
+        <div className="bg-amber-50/70 border border-amber-200/60 p-3 rounded-2xl flex items-start gap-2.5 text-slate-750 text-xs no-print shadow-xs">
+          <span className="text-amber-500 font-bold shrink-0 text-sm">💡</span>
+          <div>
+            <p className="font-semibold text-slate-900">Petunjuk Cetak (Iframe Sandbox):</p>
+            <p className="text-slate-600 mt-0.5 leading-relaxed">
+              Karena aplikasi ini berjalan di dalam frame AI Studio, beberapa browser mungkin memblokir fungsi cetak langsung. Jika tombol <strong>Cetak (PDF)</strong> tidak terbuka, silakan klik tombol <strong>"Open in New Tab" (Buka di Tab Baru)</strong> yang berada di pojok kanan atas layar Anda, lalu coba cetak kembali.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Main Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -341,6 +446,46 @@ export default function DocumentGenerator({
             {/* Standard Form Inputs */}
             <div className="space-y-4">
               
+              {/* Logo & Stamp Settings */}
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-3">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Setelan Tampilan Hasil Cetak</span>
+                
+                {/* Logo Google Drive Share Link */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-700 uppercase flex items-center gap-1">
+                    🔗 Link Logo Dinas (Google Drive)
+                  </label>
+                  <input
+                    type="text"
+                    value={logoLink}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLogoLink(val);
+                      localStorage.setItem('pupr_logo_link', val);
+                    }}
+                    placeholder="Masukkan share link logo dari Google Drive..."
+                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-hidden focus:border-indigo-500 bg-white"
+                  />
+                  <p className="text-[9px] text-slate-400">
+                    Contoh: https://drive.google.com/file/d/1_T0X.../view
+                  </p>
+                </div>
+
+                {/* Show/Hide Cap Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={showCap}
+                    onChange={(e) => setShowCap(e.target.checked)}
+                    className="w-4 h-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div className="leading-tight">
+                    <span className="text-[11px] font-bold text-slate-700 block">Tampilkan Cap / Stempel Dinas & Rekanan</span>
+                    <span className="text-[9px] text-slate-400">Hilangkan tanda centang ini jika tidak perlu ada cap (cap dinonaktifkan secara bawaan)</span>
+                  </div>
+                </label>
+              </div>
+
               {/* Nomor Dokumen & Tanggal */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -454,19 +599,70 @@ export default function DocumentGenerator({
                   </div>
 
                   {/* Rekanan */}
-                  <div className="space-y-1">
+                  <div className="space-y-1 sm:col-span-2">
                     <label className="text-[10px] font-bold text-slate-600 uppercase">Yang Menerima (Pihak Kedua)</label>
                     <select
                       value={rekananId}
                       onChange={(e) => setRekananId(e.target.value)}
                       className="w-full px-2 py-1.5 rounded-lg border border-slate-200 focus:border-indigo-500 text-[11px] bg-white text-slate-700"
                     >
-                      <option value="">-- Pilih Rekanan --</option>
+                      <option value="">-- Pilih Rekanan (atau Ketik Manual di bawah) --</option>
                       {pejabat.filter(p => p.peran === 'Rekanan' || p.peran === 'Lainnya').map(p => (
-                        <option key={p.id} value={p.id}>{p.nama}</option>
+                        <option key={p.id} value={p.id}>{p.nama} ({p.instansi})</option>
                       ))}
+                      <option value="manual">✏️ Ketik Manual (Input Baru) ...</option>
                     </select>
                   </div>
+
+                  {/* Manual Rekanan Fields */}
+                  {(rekananId === 'manual' || rekananId === '') && (
+                    <div className="sm:col-span-2 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50 grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                      <div className="sm:col-span-2 text-[10px] font-bold text-indigo-700 uppercase tracking-wide flex items-center justify-between">
+                        <span>Ketik Manual Data Rekanan (Pihak Kedua)</span>
+                        <span className="text-[8px] font-normal text-slate-400 font-sans normal-case">Tipe ini akan langsung diperbarui di berkas cetak</span>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">Nama Instansi / CV / PT</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: CV. EL EMUNAH"
+                          value={manualRekananInstansi}
+                          onChange={(e) => setManualRekananInstansi(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-indigo-500 text-[11px] bg-white text-slate-700"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">Nama Penanggung Jawab</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: YOHANES SAPA, ST"
+                          value={manualRekananNama}
+                          onChange={(e) => setManualRekananNama(e.target.value.toUpperCase())}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-indigo-500 text-[11px] bg-white text-slate-700"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">Jabatan Pihak Kedua</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: Kepala Perwakilan / Direktur"
+                          value={manualRekananJabatan}
+                          onChange={(e) => setManualRekananJabatan(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-indigo-500 text-[11px] bg-white text-slate-700"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">Alamat Kantor</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: Jln. Jend. Sudirman No. 4, Mbay"
+                          value={manualRekananAlamat}
+                          onChange={(e) => setManualRekananAlamat(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-indigo-500 text-[11px] bg-white text-slate-700"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Kepala Dinas */}
                   <div className="space-y-1">
@@ -500,71 +696,94 @@ export default function DocumentGenerator({
                 </div>
               </div>
 
-              {/* Contract References Details */}
+              {/* Dynamic References Details */}
               <div className="space-y-3.5 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Referensi Surat & Dokumen</span>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {/* Kontrak */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Nomor Kontrak</label>
-                    <input
-                      type="text"
-                      value={noKontrak}
-                      onChange={(e) => setNoKontrak(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-[11px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Tanggal Kontrak</label>
-                    <input
-                      type="date"
-                      value={tglKontrak}
-                      onChange={(e) => setTglKontrak(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-[11px]"
-                    />
-                  </div>
-
-                  {/* SPMK */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Nomor SPMK</label>
-                    <input
-                      type="text"
-                      value={noSPMK}
-                      onChange={(e) => setNoSPMK(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-[11px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Tanggal SPMK</label>
-                    <input
-                      type="date"
-                      value={tglSPMK}
-                      onChange={(e) => setTglSPMK(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-[11px]"
-                    />
-                  </div>
-
-                  {/* BAST */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Nomor BAST</label>
-                    <input
-                      type="text"
-                      value={noBAST}
-                      onChange={(e) => setNoBAST(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-[11px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase">Tanggal BAST</label>
-                    <input
-                      type="date"
-                      value={tglBAST}
-                      onChange={(e) => setTglBAST(e.target.value)}
-                      className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-[11px]"
-                    />
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Dokumen Pendukung / Lampiran</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSupportingDocs([
+                        ...supportingDocs,
+                        { id: `doc-ref-${Date.now()}-${Math.random()}`, label: 'DOKUMEN BARU', nomor: '', tanggal: '' }
+                      ]);
+                    }}
+                    className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-[9px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-3 h-3" /> Tambah Dokumen
+                  </button>
                 </div>
+                
+                {supportingDocs.length > 0 ? (
+                  <div className="space-y-3">
+                    {supportingDocs.map((doc, index) => (
+                      <div key={doc.id || index} className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 relative group shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSupportingDocs(supportingDocs.filter((_, i) => i !== index));
+                          }}
+                          className="absolute top-2 right-2 text-rose-500 hover:text-rose-700 p-1 rounded-md hover:bg-rose-50 transition-colors"
+                          title="Hapus Dokumen"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        
+                        <div className="grid grid-cols-1 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase">Jenis / Nama Dokumen</label>
+                            <input
+                              type="text"
+                              value={doc.label}
+                              onChange={(e) => {
+                                const updated = [...supportingDocs];
+                                updated[index].label = e.target.value;
+                                setSupportingDocs(updated);
+                              }}
+                              placeholder="Contoh: KONTRAK, SPMK, BAST, dll"
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-hidden focus:border-indigo-500 font-bold bg-white text-slate-700"
+                            />
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Nomor Dokumen</label>
+                              <input
+                                type="text"
+                                value={doc.nomor}
+                                onChange={(e) => {
+                                  const updated = [...supportingDocs];
+                                  updated[index].nomor = e.target.value;
+                                  setSupportingDocs(updated);
+                                }}
+                                placeholder="Nomor surat/kontrak..."
+                                className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-hidden focus:border-indigo-500 font-mono bg-white text-slate-700"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Tanggal Dokumen</label>
+                              <input
+                                type="date"
+                                value={doc.tanggal}
+                                onChange={(e) => {
+                                  const updated = [...supportingDocs];
+                                  updated[index].tanggal = e.target.value;
+                                  setSupportingDocs(updated);
+                                }}
+                                className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-hidden focus:border-indigo-500 font-mono bg-white text-slate-700"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 border border-dashed border-slate-200 rounded-xl bg-white">
+                    <p className="text-[11px] text-slate-400">Belum ada dokumen pendukung / lampiran.</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5">Silakan tambahkan menggunakan tombol di atas.</p>
+                  </div>
+                )}
               </div>
 
               {/* Tax Details Modifiers */}
@@ -678,15 +897,27 @@ export default function DocumentGenerator({
           <div className="font-sans leading-relaxed tracking-normal max-w-full print:mx-0 select-text">
             
             {/* 1. Official Kop Surat (Header) */}
-            <div className="text-center border-b-[3px] border-black pb-3 mb-6 relative">
+            <div className="text-center border-b-[3px] border-black pb-3 mb-6 relative pl-16 min-h-[50px]">
+              {/* Shield Ornament / Google Drive Image */}
+              {logoLink ? (
+                <img
+                  src={getGoogleDriveImageUrl(logoLink)}
+                  alt="Logo Dinas"
+                  className="absolute left-2 top-0 w-12 h-12 object-contain"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="absolute left-2 top-0 w-12 h-12 border border-slate-300 rounded-md flex items-center justify-center text-[7px] font-extrabold text-slate-400 font-mono bg-slate-50 uppercase tracking-widest leading-none no-print">
+                  KOP LOGO
+                </div>
+              )}
+              
               <h4 className="text-xs font-bold tracking-wider uppercase leading-tight font-sans">Pemerintah Kabupaten Nagekeo</h4>
               <h2 className="text-sm sm:text-base font-bold uppercase tracking-wide leading-tight font-sans mt-0.5">Dinas Pekerjaan Umum dan Penataan Ruang</h2>
               <p className="text-[10px] sm:text-xs text-slate-700 italic font-sans leading-snug">Kompleks Bendung Sutami - Mbay, Flores, Nusa Tenggara Timur</p>
-              
-              {/* Shield Ornament */}
-              <div className="absolute left-2 top-0 w-10 h-10 border border-slate-300 rounded-md flex items-center justify-center text-[8px] font-extrabold text-slate-400 font-mono bg-slate-50 uppercase tracking-widest leading-none no-print">
-                Logo PUPR
-              </div>
             </div>
 
             {/* Render KWITANSI */}
@@ -748,24 +979,18 @@ export default function DocumentGenerator({
                     <span className="font-bold text-slate-800 uppercase text-[10px] tracking-wider block">Dokumen Pendukung / Sesuai :</span>
                     
                     <div className="space-y-1.5">
-                      <div className="grid grid-cols-12 gap-1">
-                        <span className="col-span-3 font-semibold text-slate-600">★ KONTRAK</span>
-                        <span className="col-span-9 font-mono font-medium">
-                          Nomor : {noKontrak} / Tanggal : {formatTanggalIndo(tglKontrak)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-12 gap-1">
-                        <span className="col-span-3 font-semibold text-slate-600">★ SPMK</span>
-                        <span className="col-span-9 font-mono font-medium">
-                          Nomor : {noSPMK} / Tanggal : {formatTanggalIndo(tglSPMK)}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-12 gap-1">
-                        <span className="col-span-3 font-semibold text-slate-600">★ BAST PERENCANAAN</span>
-                        <span className="col-span-9 font-mono font-medium">
-                          Nomor : {noBAST} / Tanggal : {formatTanggalIndo(tglBAST)}
-                        </span>
-                      </div>
+                      {supportingDocs.length > 0 ? (
+                        supportingDocs.map((doc, idx) => (
+                          <div key={doc.id || idx} className="grid grid-cols-12 gap-1">
+                            <span className="col-span-4 font-semibold text-slate-600 uppercase">★ {doc.label}</span>
+                            <span className="col-span-8 font-mono font-medium">
+                              Nomor : {doc.nomor || '-'} {doc.tanggal ? ` / Tanggal : ${formatTanggalIndo(doc.tanggal)}` : ''}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-400 italic text-[10px]">(Tidak ada dokumen pendukung yang diinput)</p>
+                      )}
                     </div>
                   </div>
 
@@ -782,16 +1007,23 @@ export default function DocumentGenerator({
                         <p className="font-bold text-slate-800">Pejabat Pembuat Komitmen (PPK)</p>
                       </div>
                       {/* Signature line PPK */}
-                      <div className="relative inline-block px-6">
-                        {/* Simulated Signature */}
-                        <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-80 font-bold tracking-widest rotate-[-5deg]">
-                          {activePPK ? activePPK.nama.split(',')[0].slice(0, 10) : 'Fransiskus'}
+                      {activePPK ? (
+                        <div className="relative inline-block px-6">
+                          {/* Simulated Signature */}
+                          <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-80 font-bold tracking-widest rotate-[-5deg]">
+                            {activePPK.nama.split(',')[0].slice(0, 10)}
+                          </div>
+                          <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                            {activePPK.nama}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono">NIP. {activePPK.nip}</p>
                         </div>
-                        <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                          {activePPK ? activePPK.nama : 'FRANSISKUS P.G DADJO, ST, MT'}
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-mono">NIP. {activePPK ? activePPK.nip : '19780325 201001 1 015'}</p>
-                      </div>
+                      ) : (
+                        <div className="relative inline-block px-6 pt-8">
+                          <div className="w-48 border-t border-black/40 mx-auto"></div>
+                          <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP PPK Belum Dipilih)</p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-12">
@@ -800,15 +1032,22 @@ export default function DocumentGenerator({
                         <p className="font-bold text-slate-800">BENDAHARA PENGELUARAN</p>
                       </div>
                       {/* Signature line Bendahara */}
-                      <div className="relative inline-block px-6">
-                        <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-80 font-bold tracking-widest rotate-[3deg]">
-                          {activeBendahara ? activeBendahara.nama.slice(0, 8) : 'Florentina'}
+                      {activeBendahara ? (
+                        <div className="relative inline-block px-6">
+                          <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-80 font-bold tracking-widest rotate-[3deg]">
+                            {activeBendahara.nama.slice(0, 8)}
+                          </div>
+                          <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                            {activeBendahara.nama}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono">NIP. {activeBendahara.nip}</p>
                         </div>
-                        <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                          {activeBendahara ? activeBendahara.nama : 'FLORENTINA WONGA'}
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-mono">NIP. {activeBendahara ? activeBendahara.nip : '19780822 200312 2 006'}</p>
-                      </div>
+                      ) : (
+                        <div className="relative inline-block px-6 pt-8">
+                          <div className="w-48 border-t border-black/40 mx-auto"></div>
+                          <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP Bendahara Belum Dipilih)</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -818,37 +1057,48 @@ export default function DocumentGenerator({
                       <div>
                         <p className="text-slate-700">Mbay, {formatTanggalIndo(tanggal)}</p>
                         <p className="font-bold text-slate-800">Yang Menerima</p>
-                        <p className="font-bold text-slate-900">{activeRekanan ? activeRekanan.instansi : 'CV. EL EMUNAH'}</p>
+                        <p className="font-bold text-slate-900">{activeRekanan && activeRekanan.instansi ? activeRekanan.instansi : ''}</p>
                       </div>
 
                       {/* Signature Block with Simulated Meterai stamp! */}
-                      <div className="relative inline-block px-6">
-                        {/* Stamp Overlay */}
-                        <div className="absolute -top-16 -left-14 w-28 h-28 border-[3px] border-dashed border-indigo-700/60 rounded-full flex flex-col items-center justify-center text-[7px] text-indigo-700/80 font-bold select-none pointer-events-none rotate-12 scale-90 leading-tight">
-                          <span>{activeRekanan ? activeRekanan.instansi : 'CV. EL EMUNAH'}</span>
-                          <span className="text-[5px] border-t border-indigo-700/30 pt-0.5 mt-0.5">MBAY - FLORES</span>
-                        </div>
+                      {activeRekanan && activeRekanan.nama ? (
+                        <div className="relative inline-block px-6">
+                          {/* Stamp Overlay */}
+                          {showCap && (
+                            <div className="absolute -top-16 -left-14 w-28 h-28 border-[3px] border-dashed border-indigo-700/60 rounded-full flex flex-col items-center justify-center text-[7px] text-indigo-700/80 font-bold select-none pointer-events-none rotate-12 scale-90 leading-tight">
+                              <span>{activeRekanan.instansi}</span>
+                              <span className="text-[5px] border-t border-indigo-700/30 pt-0.5 mt-0.5">MBAY - FLORES</span>
+                            </div>
+                          )}
 
-                        {/* METERAI 10000 STAMP */}
-                        <div className="absolute -top-8 -left-4 w-12 h-16 bg-amber-400/25 border border-amber-500/50 rounded-xs flex flex-col items-center justify-between p-1 select-none pointer-events-none rotate-[-6deg] text-amber-900/80">
-                          <span className="text-[4px] font-mono leading-none tracking-tight">8CBE8ANX414</span>
-                          <div className="text-center">
-                            <span className="text-[5px] font-extrabold leading-none block">METERAI</span>
-                            <span className="text-[5px] font-extrabold leading-none block">TEMPEL</span>
+                          {/* METERAI 10000 STAMP */}
+                          {showCap && (
+                            <div className="absolute -top-8 -left-4 w-12 h-16 bg-amber-400/25 border border-amber-500/50 rounded-xs flex flex-col items-center justify-between p-1 select-none pointer-events-none rotate-[-6deg] text-amber-900/80">
+                              <span className="text-[4px] font-mono leading-none tracking-tight">8CBE8ANX414</span>
+                              <div className="text-center">
+                                <span className="text-[5px] font-extrabold leading-none block">METERAI</span>
+                                <span className="text-[5px] font-extrabold leading-none block">TEMPEL</span>
+                              </div>
+                              <span className="text-[7px] font-mono font-bold leading-none">10000</span>
+                            </div>
+                          )}
+
+                          {/* Signature string */}
+                          <div className="font-serif italic text-blue-900 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-95 font-bold tracking-widest rotate-[4deg]">
+                            {activeRekanan.nama.split(',')[0]}
                           </div>
-                          <span className="text-[7px] font-mono font-bold leading-none">10000</span>
-                        </div>
 
-                        {/* Signature string */}
-                        <div className="font-serif italic text-blue-900 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-95 font-bold tracking-widest rotate-[4deg]">
-                          {activeRekanan ? activeRekanan.nama.split(',')[0] : 'Yohanes Sapa'}
+                          <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                            {activeRekanan.nama}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-bold">{activeRekanan.jabatan || 'Kepala Perwakilan'}</p>
                         </div>
-
-                        <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                          {activeRekanan ? activeRekanan.nama : 'YOHANES SAPA, ST'}
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-bold">Kepala Perwakilan</p>
-                      </div>
+                      ) : (
+                        <div className="relative inline-block px-6 pt-8">
+                          <div className="w-48 border-t border-black/40 mx-auto"></div>
+                          <p className="text-[9px] text-slate-400 italic mt-1">(Nama & Instansi Rekanan Belum Diisi)</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -862,24 +1112,33 @@ export default function DocumentGenerator({
                       <p className="text-slate-600 font-medium">Pengguna Anggaran</p>
                     </div>
 
-                    <div className="relative inline-block px-6">
-                      {/* Circular Dinas Stamp */}
-                      <div className="absolute -top-16 -left-12 w-28 h-28 border-[4px] border-double border-indigo-700/65 rounded-full flex flex-col items-center justify-center text-[8px] text-indigo-700/80 font-bold select-none pointer-events-none rotate-[-8deg] scale-95 leading-tight">
-                        <span>DINAS PEKERJAAN UMUM</span>
-                        <span className="text-[6px] tracking-wider my-0.5">KABUPATEN NAGEKEO</span>
-                        <span className="text-[7px] font-serif uppercase border-t border-indigo-700/30 pt-0.5">MENGETAHUI</span>
-                      </div>
+                    {activeKadis ? (
+                      <div className="relative inline-block px-6">
+                        {/* Circular Dinas Stamp */}
+                        {showCap && (
+                          <div className="absolute -top-16 -left-12 w-28 h-28 border-[4px] border-double border-indigo-700/65 rounded-full flex flex-col items-center justify-center text-[8px] text-indigo-700/80 font-bold select-none pointer-events-none rotate-[-8deg] scale-95 leading-tight">
+                            <span>DINAS PEKERJAAN UMUM</span>
+                            <span className="text-[6px] tracking-wider my-0.5">KABUPATEN NAGEKEO</span>
+                            <span className="text-[7px] font-serif uppercase border-t border-indigo-700/30 pt-0.5">MENGETAHUI</span>
+                          </div>
+                        )}
 
-                      <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
-                        {activeKadis ? activeKadis.nama.split(',')[0] : 'Syarifudin'}
-                      </div>
+                        <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
+                          {activeKadis.nama.split(',')[0]}
+                        </div>
 
-                      <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                        {activeKadis ? activeKadis.nama : 'SYARIFUDIN IBRAHIM, ST'}
-                      </p>
-                      <p className="text-[10px] text-slate-600 font-medium leading-none">Pembina Utama Muda, IV/c</p>
-                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">NIP. {activeKadis ? activeKadis.nip : '19681102 199703 1 008'}</p>
-                    </div>
+                        <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                          {activeKadis.nama}
+                        </p>
+                        <p className="text-[10px] text-slate-600 font-medium leading-none">Pembina Utama Muda, IV/c</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">NIP. {activeKadis.nip}</p>
+                      </div>
+                    ) : (
+                      <div className="relative inline-block px-6 pt-8">
+                        <div className="w-48 border-t border-black/40 mx-auto"></div>
+                        <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP Kadis Belum Dipilih)</p>
+                      </div>
+                    )}
                   </div>
 
                 </div>
@@ -937,29 +1196,36 @@ export default function DocumentGenerator({
                     <div className="grid grid-cols-12 gap-1">
                       <span className="col-span-2 text-slate-600 font-medium">Nama</span>
                       <span className="col-span-1 text-center font-bold">:</span>
-                      <span className="col-span-9 font-bold text-slate-900">{activeRekanan ? activeRekanan.nama : 'YOHANES SAPA, ST'}</span>
+                      <span className="col-span-9 font-bold text-slate-900">{activeRekanan && activeRekanan.nama ? activeRekanan.nama : ''}</span>
                     </div>
                     <div className="grid grid-cols-12 gap-1">
                       <span className="col-span-2 text-slate-600 font-medium">Alamat</span>
                       <span className="col-span-1 text-center font-bold">:</span>
-                      <span className="col-span-9 text-slate-800">{activeRekanan ? activeRekanan.alamat : 'Jln. Pegangsaan II No. 9, Walikota Kupang'}</span>
+                      <span className="col-span-9 text-slate-800">{activeRekanan && activeRekanan.alamat ? activeRekanan.alamat : ''}</span>
                     </div>
                     <div className="grid grid-cols-12 gap-1">
                       <span className="col-span-2 text-slate-600 font-medium">Jabatan</span>
                       <span className="col-span-1 text-center font-bold">:</span>
-                      <span className="col-span-9 text-slate-800 font-semibold">Kepala Perwakilan {activeRekanan ? activeRekanan.instansi : 'CV. EL EMUNAH'}</span>
+                      <span className="col-span-9 text-slate-800 font-semibold">{activeRekanan && activeRekanan.jabatan ? activeRekanan.jabatan : 'Kepala Perwakilan'} {activeRekanan && activeRekanan.instansi ? activeRekanan.instansi : ''}</span>
                     </div>
                   </div>
 
                   {/* Berdasarkan references */}
                   <div className="space-y-1.5 text-[10px] leading-relaxed">
                     <p className="font-bold text-slate-800 uppercase tracking-wider">Berdasarkan :</p>
-                    <p className="pl-3">
-                      <strong>2. KONTRAK</strong> - Nomor : {noKontrak}, Tanggal : {formatTanggalIndo(tglKontrak)}, <strong className="font-bold">NILAI KONTRAK Rp : {formatRupiah(nilai)}</strong>, Uraian Pekerjaan : {uraian}
-                    </p>
-                    <p className="pl-3">
-                      <strong>3. BERITA ACARA SERAH TERIMA PRODUK PERENCANAAN</strong> - Nomor : {noBAST}, Tanggal : {formatTanggalIndo(tglBAST)} atas Pekerjaan Belanja Jasa Konsultasi.
-                    </p>
+                    {supportingDocs.map((doc, idx) => (
+                      <p key={doc.id || idx} className="pl-3">
+                        <strong>{idx + 1}. {doc.label.toUpperCase()}</strong> - Nomor : {doc.nomor || '-'}, {doc.tanggal ? `Tanggal : ${formatTanggalIndo(doc.tanggal)}` : ''}
+                        {idx === 0 && (
+                          <>
+                            , <strong className="font-bold">NILAI KONTRAK Rp : {formatRupiah(nilai)}</strong>, Uraian Pekerjaan : {uraian}
+                          </>
+                        )}
+                      </p>
+                    ))}
+                    {supportingDocs.length === 0 && (
+                      <p className="pl-3 text-slate-400 italic">(Tidak ada dokumen referensi/pendukung)</p>
+                    )}
                   </div>
 
                   {/* Calculations - matching image 2 III */}
@@ -995,62 +1261,83 @@ export default function DocumentGenerator({
 
                 </div>
 
-                {/* SIGNATURE BLOCKS - IMAGE 2 */}
-                <div className="grid grid-cols-2 gap-4 text-center text-[11px] leading-relaxed pt-8">
-                  <div className="space-y-12">
-                    <div>
-                      <p className="font-bold text-slate-800">PIHAK KEDUA</p>
-                      <p className="font-bold text-slate-900">{activeRekanan ? activeRekanan.instansi : 'CV. EL EMUNAH'}</p>
-                    </div>
-                    <div className="relative inline-block px-6">
-                      <div className="font-serif italic text-blue-900 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-90 font-bold tracking-widest rotate-[4deg]">
-                        {activeRekanan ? activeRekanan.nama.split(',')[0] : 'Yohanes Sapa'}
-                      </div>
-                      <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                        {activeRekanan ? activeRekanan.nama : 'YOHANES SAPA, ST'}
-                      </p>
-                      <p className="text-[10px] text-slate-500 font-bold">Kepala Perwakilan</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-12">
-                    <div>
-                      <p className="font-bold text-slate-800">PIHAK KESATU</p>
-                      <p className="text-slate-600 font-medium">Pejabat Pembuat Komitmen (PPK) Program</p>
-                      <p className="text-slate-600 font-medium">Penyelenggaraan Jalan T.A. 2026</p>
-                    </div>
-                    <div className="relative inline-block px-6">
-                      <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-5deg]">
-                        {activePPK ? activePPK.nama.split(',')[0].slice(0, 10) : 'Fransiskus'}
-                      </div>
-                      <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                        {activePPK ? activePPK.nama : 'FRANSISKUS P.G DADJO, ST, MT'}
-                      </p>
-                      <p className="text-[10px] text-slate-500 font-mono">NIP. {activePPK ? activePPK.nip : '19780325 201001 1 015'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mengetahui block */}
-                <div className="text-center text-[11px] space-y-12 pt-8 border-t border-slate-100">
-                  <div className="space-y-0.5">
-                    <p className="font-bold uppercase text-slate-700">Mengetahui</p>
-                    <p className="font-bold text-slate-800">Kepala Dinas Pekerjaan Umum dan Penataan Ruang Kab. Nagekeo</p>
-                    <p className="text-slate-600 font-medium">Pengguna Anggaran</p>
-                  </div>
-
-                  <div className="relative inline-block px-6">
-                    <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
-                      {activeKadis ? activeKadis.nama.split(',')[0] : 'Syarifudin'}
-                    </div>
-
-                    <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                      {activeKadis ? activeKadis.nama : 'SYARIFUDIN IBRAHIM, ST'}
-                    </p>
-                    <p className="text-[10px] text-slate-600 font-medium leading-none">Pembina Utama Muda, IV/c</p>
-                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">NIP. {activeKadis ? activeKadis.nip : '19681102 199703 1 008'}</p>
-                  </div>
-                </div>
+                 {/* SIGNATURE BLOCKS - IMAGE 2 */}
+                 <div className="grid grid-cols-2 gap-4 text-center text-[11px] leading-relaxed pt-8">
+                   <div className="space-y-12">
+                     <div>
+                       <p className="font-bold text-slate-800">PIHAK KEDUA</p>
+                       <p className="font-bold text-slate-900">{activeRekanan && activeRekanan.instansi ? activeRekanan.instansi : ''}</p>
+                     </div>
+                     {activeRekanan && activeRekanan.nama ? (
+                       <div className="relative inline-block px-6">
+                         <div className="font-serif italic text-blue-900 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-90 font-bold tracking-widest rotate-[4deg]">
+                           {activeRekanan.nama.split(',')[0]}
+                         </div>
+                         <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                           {activeRekanan.nama}
+                         </p>
+                         <p className="text-[10px] text-slate-500 font-bold">{activeRekanan.jabatan || 'Kepala Perwakilan'}</p>
+                       </div>
+                     ) : (
+                       <div className="relative inline-block px-6 pt-8">
+                         <div className="w-48 border-t border-black/40 mx-auto"></div>
+                         <p className="text-[9px] text-slate-400 italic mt-1">(Nama & Instansi Rekanan Belum Diisi)</p>
+                       </div>
+                     )}
+                   </div>
+ 
+                   <div className="space-y-12">
+                     <div>
+                       <p className="font-bold text-slate-800">PIHAK KESATU</p>
+                       <p className="text-slate-600 font-medium">Pejabat Pembuat Komitmen (PPK) Program</p>
+                       <p className="text-slate-600 font-medium">Penyelenggaraan Jalan T.A. 2026</p>
+                     </div>
+                     {activePPK ? (
+                       <div className="relative inline-block px-6">
+                         <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-5deg]">
+                           {activePPK.nama.split(',')[0].slice(0, 10)}
+                         </div>
+                         <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                           {activePPK.nama}
+                         </p>
+                         <p className="text-[10px] text-slate-500 font-mono">NIP. {activePPK.nip}</p>
+                       </div>
+                     ) : (
+                       <div className="relative inline-block px-6 pt-8">
+                         <div className="w-48 border-t border-black/40 mx-auto"></div>
+                         <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP PPK Belum Dipilih)</p>
+                       </div>
+                     )}
+                   </div>
+                 </div>
+ 
+                 {/* Mengetahui block */}
+                 <div className="text-center text-[11px] space-y-12 pt-8 border-t border-slate-100">
+                   <div className="space-y-0.5">
+                     <p className="font-bold uppercase text-slate-700">Mengetahui</p>
+                     <p className="font-bold text-slate-800">Kepala Dinas Pekerjaan Umum dan Penataan Ruang Kab. Nagekeo</p>
+                     <p className="text-slate-600 font-medium">Pengguna Anggaran</p>
+                   </div>
+ 
+                   {activeKadis ? (
+                     <div className="relative inline-block px-6">
+                       <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
+                         {activeKadis.nama.split(',')[0]}
+                       </div>
+ 
+                       <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                         {activeKadis.nama}
+                       </p>
+                       <p className="text-[10px] text-slate-600 font-medium leading-none">Pembina Utama Muda, IV/c</p>
+                       <p className="text-[10px] text-slate-500 font-mono mt-0.5">NIP. {activeKadis.nip}</p>
+                     </div>
+                   ) : (
+                     <div className="relative inline-block px-6 pt-8">
+                       <div className="w-48 border-t border-black/40 mx-auto"></div>
+                       <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP Kadis Belum Dipilih)</p>
+                     </div>
+                   )}
+                 </div>
 
               </div>
             )}
@@ -1138,15 +1425,22 @@ export default function DocumentGenerator({
                       <p className="font-bold text-slate-800">PEJABAT PELAKSANA TEKNIS KEGIATAN</p>
                       <p className="text-slate-600 font-medium">PPTK</p>
                     </div>
-                    <div className="relative inline-block px-6">
-                      <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[3deg]">
-                        {activePPTK ? activePPTK.nama.split(',')[0] : 'Anselmus Mere'}
+                    {activePPTK ? (
+                      <div className="relative inline-block px-6">
+                        <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[3deg]">
+                          {activePPTK.nama.split(',')[0]}
+                        </div>
+                        <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                          {activePPTK.nama}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-mono">NIP. {activePPTK.nip}</p>
                       </div>
-                      <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                        {activePPTK ? activePPTK.nama : 'ANSELMUS MERE, SE'}
-                      </p>
-                      <p className="text-[10px] text-slate-500 font-mono">NIP. {activePPTK ? activePPTK.nip : '19740413 200901 1 007'}</p>
-                    </div>
+                    ) : (
+                      <div className="relative inline-block px-6 pt-8">
+                        <div className="w-48 border-t border-black/40 mx-auto"></div>
+                        <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP PPTK Belum Dipilih)</p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-12">
@@ -1155,15 +1449,22 @@ export default function DocumentGenerator({
                       <p className="font-bold text-slate-800 font-sans">Kadis PUPR Kab. Nagekeo</p>
                       <p className="text-slate-600 font-medium">Pengguna Anggaran</p>
                     </div>
-                    <div className="relative inline-block px-6">
-                      <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
-                        {activeKadis ? activeKadis.nama.split(',')[0] : 'Syarifudin'}
+                    {activeKadis ? (
+                      <div className="relative inline-block px-6">
+                        <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
+                          {activeKadis.nama.split(',')[0]}
+                        </div>
+                        <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                          {activeKadis.nama}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-mono">NIP. {activeKadis.nip}</p>
                       </div>
-                      <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                        {activeKadis ? activeKadis.nama : 'SYARIFUDIN IBRAHIM, ST'}
-                      </p>
-                      <p className="text-[10px] text-slate-500 font-mono">NIP. {activeKadis ? activeKadis.nip : '19681102 199703 1 008'}</p>
-                    </div>
+                    ) : (
+                      <div className="relative inline-block px-6 pt-8">
+                        <div className="w-48 border-t border-black/40 mx-auto"></div>
+                        <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP Kadis Belum Dipilih)</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1231,35 +1532,46 @@ export default function DocumentGenerator({
                       <p className="font-bold text-slate-800 uppercase">Kepala Dinas PUPR / Pengguna Anggaran</p>
                     </div>
 
-                    <div className="relative inline-block px-6">
-                      {/* Circle seal of PUPR */}
-                      <div className="absolute -top-16 -left-12 w-28 h-28 border-[4px] border-double border-indigo-700/65 rounded-full flex flex-col items-center justify-center text-[8px] text-indigo-700/80 font-bold select-none pointer-events-none rotate-[-8deg] scale-95 leading-tight">
-                        <span>DINAS PEKERJAAN UMUM</span>
-                        <span className="text-[6px] tracking-wider my-0.5">KABUPATEN NAGEKEO</span>
-                        <span className="text-[7px] font-serif uppercase border-t border-indigo-700/30 pt-0.5">MENGETAHUI</span>
-                      </div>
+                    {activeKadis ? (
+                      <div className="relative inline-block px-6">
+                        {/* Circle seal of PUPR */}
+                        {showCap && (
+                          <div className="absolute -top-16 -left-12 w-28 h-28 border-[4px] border-double border-indigo-700/65 rounded-full flex flex-col items-center justify-center text-[8px] text-indigo-700/80 font-bold select-none pointer-events-none rotate-[-8deg] scale-95 leading-tight">
+                            <span>DINAS PEKERJAAN UMUM</span>
+                            <span className="text-[6px] tracking-wider my-0.5">KABUPATEN NAGEKEO</span>
+                            <span className="text-[7px] font-serif uppercase border-t border-indigo-700/30 pt-0.5">MENGETAHUI</span>
+                          </div>
+                        )}
 
-                      {/* METERAI 10000 STAMP */}
-                      <div className="absolute -top-8 -left-4 w-12 h-16 bg-amber-400/25 border border-amber-500/50 rounded-xs flex flex-col items-center justify-between p-1 select-none pointer-events-none rotate-[-6deg] text-amber-900/80">
-                        <span className="text-[4px] font-mono leading-none tracking-tight">MTR10000X99</span>
-                        <div className="text-center">
-                          <span className="text-[5px] font-extrabold leading-none block">METERAI</span>
-                          <span className="text-[5px] font-extrabold leading-none block">TEMPEL</span>
+                        {/* METERAI 10000 STAMP */}
+                        {showCap && (
+                          <div className="absolute -top-8 -left-4 w-12 h-16 bg-amber-400/25 border border-amber-500/50 rounded-xs flex flex-col items-center justify-between p-1 select-none pointer-events-none rotate-[-6deg] text-amber-900/80">
+                            <span className="text-[4px] font-mono leading-none tracking-tight">MTR10000X99</span>
+                            <div className="text-center">
+                              <span className="text-[5px] font-extrabold leading-none block">METERAI</span>
+                              <span className="text-[5px] font-extrabold leading-none block">TEMPEL</span>
+                            </div>
+                            <span className="text-[7px] font-mono font-bold leading-none">10000</span>
+                          </div>
+                        )}
+
+                        {/* Signature Name */}
+                        <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
+                          {activeKadis.nama.split(',')[0]}
                         </div>
-                        <span className="text-[7px] font-mono font-bold leading-none">10000</span>
-                      </div>
 
-                      {/* Signature Name */}
-                      <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
-                        {activeKadis ? activeKadis.nama.split(',')[0] : 'Syarifudin'}
+                        <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                          {activeKadis.nama}
+                        </p>
+                        <p className="text-[10px] text-slate-600 font-medium leading-none">Pembina Utama Muda, IV/c</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">NIP. {activeKadis.nip}</p>
                       </div>
-
-                      <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
-                        {activeKadis ? activeKadis.nama : 'SYARIFUDIN IBRAHIM, ST'}
-                      </p>
-                      <p className="text-[10px] text-slate-600 font-medium leading-none">Pembina Utama Muda, IV/c</p>
-                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">NIP. {activeKadis ? activeKadis.nip : '19681102 199703 1 008'}</p>
-                    </div>
+                    ) : (
+                      <div className="relative inline-block px-6 pt-8">
+                        <div className="w-48 border-t border-black/40 mx-auto"></div>
+                        <p className="text-[9px] text-slate-400 italic mt-1">(Nama & NIP Kadis Belum Dipilih)</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1331,9 +1643,19 @@ export default function DocumentGenerator({
 
                           <div className="flex items-start gap-2">
                             <span className="text-emerald-600 font-bold">✓</span>
-                            <div>
-                              <p className="font-semibold text-slate-800">7. Salinan Kontrak, SPMK, & BAST</p>
-                              <p className="text-[10px] text-slate-500">No. Kontrak: {noKontrak} • Tanggal Kontrak: {formatTanggalIndo(tglKontrak)}</p>
+                            <div className="flex-1">
+                              <p className="font-semibold text-slate-800">7. Dokumen Pendukung & Lampiran ({supportingDocs.length} Berkas)</p>
+                              <div className="text-[10px] text-slate-500 space-y-0.5 mt-0.5">
+                                {supportingDocs.length > 0 ? (
+                                  supportingDocs.map((doc, dIdx) => (
+                                    <p key={doc.id || dIdx} className="pl-1">
+                                      • <strong>{doc.label}</strong>: {doc.nomor || '-'} {doc.tanggal ? `• Tanggal: ${formatTanggalIndo(doc.tanggal)}` : ''}
+                                    </p>
+                                  ))
+                                ) : (
+                                  <p className="text-slate-400 italic">Belum ada berkas pendukung yang diinput</p>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1358,5 +1680,63 @@ export default function DocumentGenerator({
       </div>
 
     </div>
+
+    {/* Modal Hint for Printing Inside Sandbox Iframe */}
+    {showPrintHintModal && (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 no-print">
+        <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+              <Printer className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-900">Petunjuk Pencetakan Dokumen</h3>
+              <p className="text-[10px] text-slate-500">Iframe Sandbox Browser Security</p>
+            </div>
+          </div>
+
+          <div className="space-y-2 text-xs leading-relaxed text-slate-600">
+            <p>
+              Sistem keamanan modern memblokir dialog cetak otomatis (<code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[10px]">window.print</code>) dari dalam bingkai (iframe) pratinjau aplikasi ini.
+            </p>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-2">
+              <p className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">Langkah Mudah Mencetak:</p>
+              <ol className="list-decimal pl-4 space-y-1.5 text-slate-750">
+                <li>
+                  Klik tombol <strong>"Open in New Tab" (Buka di Tab Baru)</strong> di pojok kanan atas layar Anda (ikon panah keluar).
+                </li>
+                <li>
+                  Aplikasi akan terbuka penuh di tab baru. Silakan klik tombol <strong>Cetak (PDF)</strong> di sana.
+                </li>
+                <li>
+                  Dialog cetak sistem printer bawaan browser Anda akan langsung terbuka dengan lancar!
+                </li>
+              </ol>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowPrintHintModal(false);
+                try { window.print(); } catch (e) {}
+              }}
+              className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-750 text-xs font-bold rounded-xl cursor-pointer transition-all"
+            >
+              Coba Cetak Saja
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPrintHintModal(false)}
+              className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer transition-all"
+            >
+              Mengerti, Tutup
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

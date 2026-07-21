@@ -26,12 +26,22 @@
     font-size: 11pt !important;
   }
   
-  .no-print {
+  .no-print, .no-print * {
     display: none !important;
+    visibility: hidden !important;
   }
   
   .print-only {
     display: block !important;
+  }
+  
+  /* Reset layout constraints during printing */
+  html, body, #root, main {
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
   }
   
   .print-card {
@@ -45,6 +55,6 @@
   
   @page {
     size: portrait;
-    margin: 1.5cm;
+    margin: 1cm;
   }
 }

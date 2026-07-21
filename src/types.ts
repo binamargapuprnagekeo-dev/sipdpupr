@@ -39,6 +39,12 @@ export interface Dokumen {
   bendaharaId?: string;
   rekananId?: string;
   kadisId?: string;
+
+  // Manual Rekanan input overrides
+  manualRekananInstansi?: string;
+  manualRekananNama?: string;
+  manualRekananJabatan?: string;
+  manualRekananAlamat?: string;
   
   // Kontrak & SPMK
   noKontrak?: string;
@@ -47,6 +53,9 @@ export interface Dokumen {
   tglSPMK?: string;
   noBAST?: string;
   tglBAST?: string;
+
+  // Dynamic supporting documents list
+  supportingDocs?: { id: string; label: string; nomor: string; tanggal: string }[];
   
   // BAP details
   nilaiKontrak?: number;
