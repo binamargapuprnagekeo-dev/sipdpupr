@@ -9,13 +9,15 @@ import {
   HelpCircle,
   TrendingUp,
   Stamp,
-  Printer
+  Printer,
+  Video
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import DocumentGenerator from './components/DocumentGenerator';
 import BudgetManager from './components/BudgetManager';
 import TaxCalculator from './components/TaxCalculator';
 import Settings from './components/Settings';
+import Coordination from './components/Coordination';
 import { Dokumen, RekeningAnggaran, CatatanPajak, Pejabat } from './types';
 import { 
   DEFAULT_REKENING, 
@@ -23,10 +25,58 @@ import {
   DEFAULT_PAJAK, 
   DEFAULT_PEJABAT 
 } from './data/defaultData';
+import { 
+  initAuth, 
+  googleSignIn, 
+  googleSignOut 
+} from './utils/firebaseAuth';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
+  // Google Auth states
+  const [googleUser, setGoogleUser] = useState<any>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+
+  // Initialize Auth listener
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (currentUser, currentToken) => {
+        setGoogleUser(currentUser);
+        setGoogleToken(currentToken);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      const result = await googleSignIn();
+      if (result) {
+        setGoogleUser(result.user);
+        setGoogleToken(result.accessToken);
+      }
+    } catch (e) {
+      console.error('Google login failed:', e);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    try {
+      await googleSignOut();
+      setGoogleUser(null);
+      setGoogleToken(null);
+    } catch (e) {
+      console.error('Google logout failed:', e);
+    }
+  };
+
   // Selected document to view in generator (from recent clicks on Dashboard)
   const [selectedExternalDoc, setSelectedExternalDoc] = useState<Dokumen | null>(null);
 
@@ -331,7 +381,7 @@ export default function App() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">SIPD Penatausahaan</span>
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">SIPD & Sistem SPJ</span>
                 <span className="text-[9px] font-bold bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded-sm">TA 2026</span>
               </div>
               <h1 className="text-sm sm:text-base font-extrabold tracking-tight uppercase leading-none mt-0.5">
@@ -360,6 +410,7 @@ export default function App() {
               { id: 'documents', label: 'Generator Dokumen', icon: FileText },
               { id: 'budget', label: 'Daftar Anggaran', icon: Receipt },
               { id: 'taxes', label: 'Kalkulator Pajak', icon: Calculator },
+              { id: 'coordination', label: 'Rapat & Koordinasi', icon: Video },
               { id: 'settings', label: 'Personil & Database', icon: SettingsIcon },
             ].map((tab) => {
               const IconComp = tab.icon;
@@ -444,6 +495,19 @@ export default function App() {
             setDokumen={setDokumen}
             setPajak={setPajak}
             setPejabat={setPejabat}
+          />
+        )}
+
+        {activeTab === 'coordination' && (
+          <Coordination 
+            token={googleToken}
+            user={googleUser}
+            onLogin={handleGoogleLogin}
+            onLogout={handleGoogleLogout}
+            rekening={rekening}
+            dokumen={dokumen}
+            pajak={pajak}
+            pejabat={pejabat}
           />
         )}
 

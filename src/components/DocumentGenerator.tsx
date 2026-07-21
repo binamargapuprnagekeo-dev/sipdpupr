@@ -42,7 +42,7 @@ export default function DocumentGenerator({
 }: DocumentGeneratorProps) {
   
   // Tab selecting
-  const [activeDocType, setActiveDocType] = useState<'Kwitansi' | 'BAP' | 'NPD'>('Kwitansi');
+  const [activeDocType, setActiveDocType] = useState<'Kwitansi' | 'BAP' | 'NPD' | 'SPJ'>('Kwitansi');
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
 
@@ -80,7 +80,7 @@ export default function DocumentGenerator({
 
   // Populate form from external or selected document
   const populateForm = (doc: Dokumen) => {
-    setActiveDocType(doc.jenis as 'Kwitansi' | 'BAP' | 'NPD');
+    setActiveDocType(doc.jenis as 'Kwitansi' | 'BAP' | 'NPD' | 'SPJ');
     setSelectedDocId(doc.id);
     setNomor(doc.nomor);
     setTanggal(doc.tanggal);
@@ -270,6 +270,16 @@ export default function DocumentGenerator({
             }`}
           >
             3. Nota Pencairan (NPD)
+          </button>
+          <button
+            onClick={() => { setActiveDocType('SPJ'); }}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activeDocType === 'SPJ' 
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-100' 
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            4. Berkas SPJ & SPTJM
           </button>
         </div>
 
@@ -1153,6 +1163,186 @@ export default function DocumentGenerator({
                         {activeKadis ? activeKadis.nama : 'SYARIFUDIN IBRAHIM, ST'}
                       </p>
                       <p className="text-[10px] text-slate-500 font-mono">NIP. {activeKadis ? activeKadis.nip : '19681102 199703 1 008'}</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* Render SURAT PERTANGGUNGJAWABAN (SPJ) / SPTJM */}
+            {activeDocType === 'SPJ' && (
+              <div className="space-y-6">
+                {/* Title */}
+                <div className="text-center space-y-1">
+                  <h1 className="text-base sm:text-lg font-bold uppercase tracking-widest border-b border-black inline-block px-4 pb-0.5">Surat Pernyataan Tanggung Jawab Mutlak (SPTJM)</h1>
+                  <p className="text-xs font-mono font-bold text-slate-800">Nomor Registrasi SPJ: SPJ/PUPR/{nomor.split('/')[2] || '00097'}/2026</p>
+                  <p className="text-xs font-mono font-medium text-slate-500">Tanggal Pengajuan: {formatTanggalIndo(tanggal)}</p>
+                </div>
+
+                <div className="space-y-4 text-xs font-sans text-justify leading-relaxed">
+                  <p>Saya yang bertanda tangan di bawah ini:</p>
+                  
+                  <div className="pl-6 space-y-1.5 font-medium text-slate-900">
+                    <div className="grid grid-cols-12 gap-1">
+                      <span className="col-span-3 text-slate-600">Nama Lengkap</span>
+                      <span className="col-span-1 text-center font-bold">:</span>
+                      <span className="col-span-8 font-bold">{activeKadis ? activeKadis.nama : 'SYARIFUDIN IBRAHIM, ST'}</span>
+                    </div>
+                    <div className="grid grid-cols-12 gap-1">
+                      <span className="col-span-3 text-slate-600">NIP</span>
+                      <span className="col-span-1 text-center font-bold">:</span>
+                      <span className="col-span-8 font-mono">{activeKadis ? activeKadis.nip : '19681102 199703 1 008'}</span>
+                    </div>
+                    <div className="grid grid-cols-12 gap-1">
+                      <span className="col-span-3 text-slate-600">Jabatan</span>
+                      <span className="col-span-1 text-center font-bold">:</span>
+                      <span className="col-span-8 text-slate-800">Pengguna Anggaran / Kepala Dinas Pekerjaan Umum dan Penataan Ruang</span>
+                    </div>
+                    <div className="grid grid-cols-12 gap-1">
+                      <span className="col-span-3 text-slate-600">Instansi</span>
+                      <span className="col-span-1 text-center font-bold">:</span>
+                      <span className="col-span-8 text-slate-800">Dinas Pekerjaan Umum dan Penataan Ruang Kabupaten Nagekeo</span>
+                    </div>
+                  </div>
+
+                  <p>Menyatakan dengan sesungguhnya bahwa:</p>
+                  
+                  <ol className="list-decimal pl-6 space-y-2.5">
+                    <li>
+                      Seluruh dokumen pertanggungjawaban belanja dalam Berkas SPJ ini untuk <strong className="font-bold">{uraian}</strong> dengan total nilai pembayaran kotor sebesar <strong className="font-extrabold text-slate-900 font-mono bg-slate-50 px-1 py-0.5 rounded border border-slate-200">{formatRupiah(nilai)} ({terbilang(nilai)})</strong> telah diuji, dihitung, dan diselesaikan sesuai dengan ketentuan peraturan perundang-undangan yang berlaku.
+                    </li>
+                    <li>
+                      Rincian perhitungan pajak atas belanja tersebut sebesar <strong className="font-bold text-slate-900 font-mono">{formatRupiah(taxPPN + taxPPh23 + taxPPh22 + taxDaerah)}</strong> (terdiri dari PPN: {formatRupiah(taxPPN)}, PPh 23: {formatRupiah(taxPPh23)}, PPh 22: {formatRupiah(taxPPh22)}, Pajak Daerah: {formatRupiah(taxDaerah)}) adalah sah dan telah dilakukan penyisihan / pemotongan untuk disetor ke Kas Negara & Kas Daerah.
+                    </li>
+                    <li>
+                      Apabila di kemudian hari berdasarkan hasil audit / pemeriksaan aparat fungsional pengawas terdapat kelebihan pembayaran, kesalahan perhitungan, atau tuntutan ganti kerugian, saya bersedia dan bertanggung jawab penuh secara mutlak untuk menyetorkan kembali kerugian tersebut ke Kas Daerah Kabupaten Nagekeo dalam jangka waktu yang telah ditentukan.
+                    </li>
+                  </ol>
+
+                  <p>Demikian Surat Pernyataan Tanggung Jawab Mutlak (SPTJM) ini dibuat dengan penuh kesadaran dan tanggung jawab untuk dapat dipergunakan sebagaimana mestinya.</p>
+                </div>
+
+                {/* SIGNATURE WITH METERAI & SEAL */}
+                <div className="flex justify-end pt-4">
+                  <div className="w-1/2 text-center space-y-12 text-[11px]">
+                    <div className="space-y-0.5">
+                      <p className="text-slate-700">Mbay, {formatTanggalIndo(tanggal)}</p>
+                      <p className="font-bold text-slate-800 uppercase">Kepala Dinas PUPR / Pengguna Anggaran</p>
+                    </div>
+
+                    <div className="relative inline-block px-6">
+                      {/* Circle seal of PUPR */}
+                      <div className="absolute -top-16 -left-12 w-28 h-28 border-[4px] border-double border-indigo-700/65 rounded-full flex flex-col items-center justify-center text-[8px] text-indigo-700/80 font-bold select-none pointer-events-none rotate-[-8deg] scale-95 leading-tight">
+                        <span>DINAS PEKERJAAN UMUM</span>
+                        <span className="text-[6px] tracking-wider my-0.5">KABUPATEN NAGEKEO</span>
+                        <span className="text-[7px] font-serif uppercase border-t border-indigo-700/30 pt-0.5">MENGETAHUI</span>
+                      </div>
+
+                      {/* METERAI 10000 STAMP */}
+                      <div className="absolute -top-8 -left-4 w-12 h-16 bg-amber-400/25 border border-amber-500/50 rounded-xs flex flex-col items-center justify-between p-1 select-none pointer-events-none rotate-[-6deg] text-amber-900/80">
+                        <span className="text-[4px] font-mono leading-none tracking-tight">MTR10000X99</span>
+                        <div className="text-center">
+                          <span className="text-[5px] font-extrabold leading-none block">METERAI</span>
+                          <span className="text-[5px] font-extrabold leading-none block">TEMPEL</span>
+                        </div>
+                        <span className="text-[7px] font-mono font-bold leading-none">10000</span>
+                      </div>
+
+                      {/* Signature Name */}
+                      <div className="font-serif italic text-blue-800 text-lg absolute -top-8 left-1/2 transform -translate-x-1/2 select-none pointer-events-none opacity-85 font-bold tracking-widest rotate-[-3deg]">
+                        {activeKadis ? activeKadis.nama.split(',')[0] : 'Syarifudin'}
+                      </div>
+
+                      <p className="font-bold underline text-slate-900 border-t border-black/55 pt-1 uppercase">
+                        {activeKadis ? activeKadis.nama : 'SYARIFUDIN IBRAHIM, ST'}
+                      </p>
+                      <p className="text-[10px] text-slate-600 font-medium leading-none">Pembina Utama Muda, IV/c</p>
+                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">NIP. {activeKadis ? activeKadis.nip : '19681102 199703 1 008'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* VERIFICATION CHECKLIST SECTION (INTEGRATED VIEW) */}
+                <div className="mt-8 pt-6 border-t-[2px] border-black border-dashed font-sans space-y-4 no-print-break">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5 uppercase mb-3">
+                      <Stamp className="w-4 h-4 text-purple-600" /> Checklist Integrasi Dokumen & Kelengkapan SPJ
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px]">
+                      <div className="space-y-2">
+                        <span className="font-bold text-slate-600 uppercase text-[9px] block tracking-wide">I. Berkas Utama SPJ (Sistem Informasi SIPD)</span>
+                        
+                        <div className="space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <div>
+                              <p className="font-semibold text-slate-800">1. Surat Pengantar SPJ (SIPD)</p>
+                              <p className="text-[10px] text-slate-500">Nomor Surat Pengantar terhubung ke DPA SKPD Dinas PUPR</p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <div>
+                              <p className="font-semibold text-slate-800">2. Surat Pernyataan Tanggung Jawab Mutlak (SPTJM)</p>
+                              <p className="text-[10px] text-slate-500">Ditandatangani di atas meterai 10000 oleh Pengguna Anggaran</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <div>
+                              <p className="font-semibold text-slate-800">3. Nota Pencairan Dana (NPD)</p>
+                              <p className="text-[10px] text-slate-500">No: {formatNoNPD(nomor)} • Sebesar {formatRupiah(nilai)}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <div>
+                              <p className="font-semibold text-slate-800">4. Kwitansi Belanja Dinas</p>
+                              <p className="text-[10px] text-slate-500">No: {nomor} • Ditandatangani PPK, Bendahara, & Penerima</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <span className="font-bold text-slate-600 uppercase text-[9px] block tracking-wide">II. Rincian & Lampiran Pendukung SPJ</span>
+                        
+                        <div className="space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <div>
+                              <p className="font-semibold text-slate-800">5. Bukti Pemotongan Pajak Belanja</p>
+                              <p className="text-[10px] text-slate-500">PPN 11%: {formatRupiah(taxPPN)} | PPh: {formatRupiah(taxPPh23 + taxPPh22 + taxPPh21)} | Daerah: {formatRupiah(taxDaerah)}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <div>
+                              <p className="font-semibold text-slate-800">6. Berita Acara Pembayaran (BAP) Fisik</p>
+                              <p className="text-[10px] text-slate-500">Menyatakan penyelesaian fisik pekerjaan konsultansi 100%</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            <div>
+                              <p className="font-semibold text-slate-800">7. Salinan Kontrak, SPMK, & BAST</p>
+                              <p className="text-[10px] text-slate-500">No. Kontrak: {noKontrak} • Tanggal Kontrak: {formatTanggalIndo(tglKontrak)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3.5 pt-3 border-t border-slate-200 flex items-center justify-between text-[10px] font-semibold text-slate-500 font-sans">
+                      <span>Status Verifikasi Keuangan Dinas: <span className="text-emerald-600 font-bold">✓ LENGKAP & VALID (SIAP AJUKAN SPM)</span></span>
+                      <span className="font-mono text-[9px]">Sistem Informasi SPJ Dinas PUPR Nagekeo 2026</span>
                     </div>
                   </div>
                 </div>
